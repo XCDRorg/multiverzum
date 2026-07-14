@@ -191,6 +191,11 @@
     "istanbul-lib-report/make-dir/semver": "6.3.1",
     "read-pkg/normalize-package-data/semver": "5.7.2",
     "meow/normalize-package-data/semver": "7.5.2",
-    "**/simple-update-notifier/semver": "7.5.2"
+    "**/simple-update-notifier/semver": "7.5.2",
+    "path-to-regexp": "0.1.13",
+    "body-parser": "1.20.3",
+    "puppeteer-core/ws": "6.2.4",
+    "@storybook/core-server/ws": "8.21.0",
+    "jsdom/ws": "8.21.0"
   }
 }
