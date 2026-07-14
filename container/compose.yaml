@@ -1,0 +1,42 @@
+# container/compose.yaml
+# Podman Compose (podman-compose up) or `podman play kube` after conversion.
+# Two services you pick between:
+#   serve : production static build, COOP/COEP via serve.json   (default)
+#   dev   : Vite dev server with HMR, for the edit/render loop
+#
+# IMPORTANT (headless rig -> notebook browser):
+#   Cross-origin isolation (needed for SharedArrayBuffer) only activates in a
+#   "secure context". http://localhost qualifies; http://<rig-LAN-ip> does NOT.
+#   So pointing your notebook at http://RIG-IP:3000 will load the page but
+#   SharedArrayBuffer (threads/scripting) stays disabled. Fix = ONE of:
+#     (a) SSH-tunnel so the browser sees it as localhost (recommended, see
+#         container/README in BUILD_RIG_SETUP); or
+#     (b) serve over HTTPS with a trusted cert (mkcert) so RIG-IP is secure; or
+#     (c) Chrome flag for testing only (unsafe; see notes).
+#   The tunnel is simplest and keeps the dev server off the network entirely.
+
+version: "3"
+services:
+  serve:
+    image: localhost/tr-app:latest
+    build:
+      context: ..
+      dockerfile: container/Containerfile
+    ports:
+      - "127.0.0.1:3000:3000"   # bind to loopback only; reach via SSH tunnel
+    restart: "no"
+
+  dev:
+    image: localhost/tr-app:latest
+    working_dir: /opt/app-root/src
+    # Vite dev server. hmr is disabled in vite.config.ts already. Bind to
+    # 0.0.0.0 INSIDE the container; we still only publish to host loopback.
+    command: ["yarn", "dev", "--host", "0.0.0.0", "--port", "3000"]
+    ports:
+      - "127.0.0.1:3000:3000"   # loopback publish; tunnel from the notebook
+    # Mount the working tree so edits on the rig are picked up live. Use :Z on
+    # SELinux systems (RHEL/Fedora) so Podman relabels for container access.
+    volumes:
+      - ..:/opt/app-root/src:Z
+      - /opt/app-root/src/node_modules   # don't shadow the image's installed deps
+    restart: "no"

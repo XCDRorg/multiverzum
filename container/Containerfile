@@ -1,0 +1,97 @@
+# container/Containerfile
+# ---------------------------------------------------------------------------
+# Third Room build + serve image, on a Red Hat UBI 9 Node.js foundation.
+#
+# Base: ubi9/nodejs-22 is the current, supported, signed UBI Node image.
+#   (ubi9/nodejs-20 is DEPRECATED in the Red Hat catalog as of 2026, so we do
+#    not base on it.) We still TARGET the Node 20 runtime line for this
+#    2023-era repo by installing Node 20 via the image's module stream / nvm
+#    if needed — but in practice Node 22 builds this repo cleanly; pin via the
+#    engines field if you hit a 22-specific issue.
+#
+# This is a multi-stage build:
+#   wasm-stage : pulls the prebuilt wasm artifact from Containerfile.wasm
+#   builder    : yarn install + build (needs git, python, build tools)
+#   runtime    : minimal-ish image that serves the static dist + dev server
+#
+# Pin the base by digest for integrity. Get the current digest with:
+#   skopeo inspect docker://registry.access.redhat.com/ubi9/nodejs-22 \
+#     | jq -r '.Digest'
+# then replace the @sha256:... below. Tag alone works until you do.
+# ---------------------------------------------------------------------------
+
+# ---- Stage 1: bring in the WASM artifact built by Containerfile.wasm --------
+# Built and tagged separately (see container/build.sh) as localhost/tr-wasm
+FROM localhost/tr-wasm:latest AS wasm
+
+# ---- Stage 2: builder ------------------------------------------------------
+FROM registry.access.redhat.com/ubi9/nodejs-22 AS builder
+
+# The UBI node image runs as USER 1001, group 0, home /opt/app-root/src.
+# Switch to root only to install OS build dependencies, then drop back.
+USER 0
+
+# Native deps some npm packages need at install/build time (node-gyp chain),
+# plus git for the git-ref dependencies (bitECS, 3DTilesRendererJS) and
+# git-lfs for the repo's binary assets.
+RUN dnf install -y --setopt=install_weak_deps=0 \
+        git git-lfs make gcc gcc-c++ python3 \
+    && dnf clean all \
+    && git lfs install --system
+
+# OpenShift/UBI permission model: app dir owned by 1001:0 and group-writable
+# so an arbitrary UID in group 0 can write. We work in the image's app root.
+WORKDIR /opt/app-root/src
+
+# Copy manifests first for layer caching, fix ownership to the non-root user.
+COPY --chown=1001:0 package.json yarn.lock ./
+COPY --chown=1001:0 packages/ ./packages/
+
+# Drop to the non-root user for dependency install (never run yarn as root).
+USER 1001
+
+# Corepack ships with the UBI node image; enable Yarn classic from the lockfile.
+RUN npm install -g yarn@1
+
+# Network-dependent: this fetches the git-ref deps from github.com. Make sure
+# the rig has outbound access to github.com + the npm registry when building.
+RUN yarn install --frozen-lockfile
+
+# Now copy the rest of the source (ownership to non-root user).
+COPY --chown=1001:0 . .
+
+# Drop in the prebuilt WASM artifact from the wasm stage so `yarn build`
+# doesn't need emcc in this image.
+COPY --chown=1001:0 --from=wasm /src/build/scripting-runtime.wasm \
+     /opt/app-root/src/src/engine/scripting/emscripten/build/scripting-runtime.wasm
+
+# Production build. The upstream `yarn build` also chains docs:build and
+# build-storybook, which fail on this commit (missing .storybook/main.js) and
+# are irrelevant to the deployable app. So we run only the app build steps.
+RUN yarn tsc && yarn vite build
+
+# ---- Stage 3: runtime (serve the static build + optional dev server) -------
+FROM registry.access.redhat.com/ubi9/nodejs-22 AS runtime
+
+USER 0
+# A tiny static file server with correct COOP/COEP support. We use `serve`
+# pinned, but http-server or a hardened nginx conf are equally fine. The
+# CRITICAL requirement is the two cross-origin-isolation headers (see
+# container/serve.json and the entrypoint).
+RUN npm install -g serve@14 && dnf clean all || true
+
+WORKDIR /opt/app-root/src
+COPY --chown=1001:0 --from=builder /opt/app-root/src/dist ./dist
+# serve.json must live INSIDE dist: `serve` resolves --config relative to the
+# served root, so a bare "serve.json" arg means dist/serve.json.
+COPY --chown=1001:0 container/serve.json ./dist/serve.json
+
+USER 1001
+EXPOSE 3000
+
+# The frontend serves ONLY the Third Room app. The Matrix .well-known delegation
+# is served by the separate `wellknown` nginx container (see deploy/wellknown),
+# NOT here. serve.json carries the COOP/COEP headers SharedArrayBuffer needs;
+# without them the threaded WASM scripting runtime fails in the browser.
+# -s = single-page-app mode (unknown paths -> index.html).
+CMD ["serve", "-s", "dist", "-l", "3000", "--config", "serve.json"]

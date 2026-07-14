@@ -1,0 +1,32 @@
+# container/Containerfile.wasm
+# ---------------------------------------------------------------------------
+# Stage that builds ONLY the QuickJS-on-WASM scripting runtime.
+# Uses the exact Emscripten version Third Room was originally built with
+# (pinned in src/engine/scripting/emscripten/build-docker.sh as 3.1.23),
+# so the artifact matches upstream provenance. Output: scripting-runtime.wasm
+#
+# We keep this separate from the UBI image deliberately: compiling the
+# Emscripten SDK against RHEL's toolchain is fragile and unnecessary. Build
+# the wasm here, copy the artifact into the UBI image (see Containerfile).
+# ---------------------------------------------------------------------------
+
+# Pin emsdk by tag AND digest. Replace the digest below with the value you get
+# from:  skopeo inspect docker://docker.io/emscripten/emsdk:3.1.23 | jq -r .Digest
+# Until you verify it, the tag alone still works; the digest is defense-in-depth.
+FROM docker.io/emscripten/emsdk:3.1.23
+
+# emsdk image runs as root by default; we only build an artifact here so that
+# is acceptable for a throwaway build stage. The artifact is not executed here.
+WORKDIR /src
+
+# Copy ONLY the emscripten subtree the wasm build needs.
+# NOTE: this path is relative to the BUILD CONTEXT. build.sh sets the context to
+# the repo root (the directory containing this `container/` folder), so the
+# correct source path is the full repo-relative path below.
+COPY src/engine/scripting/emscripten/ /src/
+
+# Ensure the build output dir exists, then run the upstream build script
+# unchanged. It writes ./build/scripting-runtime.wasm
+RUN mkdir -p build && ./build.sh
+
+# The artifact now lives at /src/build/scripting-runtime.wasm
