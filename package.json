@@ -147,6 +147,25 @@
     "vitest": "^0.29.2"
   },
   "resolutions": {
-    "tar": "^7.5.7"
+    "tar": "^7.5.7",
+    "picomatch": "2.3.2",
+    "braces": "3.0.3",
+    "@eslint/eslintrc/minimatch": "3.1.4",
+    "@humanwhocodes/config-array/minimatch": "3.1.4",
+    "eslint-plugin-import/minimatch": "3.1.4",
+    "eslint-plugin-jsx-a11y/minimatch": "3.1.4",
+    "eslint-plugin-react/minimatch": "3.1.4",
+    "eslint/minimatch": "3.1.4",
+    "jake/minimatch": "3.1.4",
+    "node-dir/minimatch": "3.1.4",
+    "test-exclude/minimatch": "3.1.4",
+    "@joshwooding/vite-plugin-react-docgen-typescript/glob/minimatch": "3.1.4",
+    "rimraf/glob/minimatch": "3.1.4",
+    "shelljs/glob/minimatch": "3.1.4",
+    "test-exclude/glob/minimatch": "3.1.4",
+    "filelist/minimatch": "5.1.8",
+    "@storybook/builder-vite/glob/minimatch": "5.1.8",
+    "@storybook/core-common/glob/minimatch": "5.1.8",
+    "typedoc/minimatch": "9.0.7"
   }
 }
