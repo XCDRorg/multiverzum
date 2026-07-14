@@ -1,0 +1,65 @@
+# multiversum.cloud — Caddy reverse proxy
+# Caddy gets Let's Encrypt certs automatically for every domain below.
+# The COOP/COEP headers on the frontend are MANDATORY for Third Room's
+# SharedArrayBuffer (threaded WASM). Real certs = real secure context.
+
+# ---------------------------------------------------------------------------
+# Third Room web client (root domain)
+multiversum.cloud {
+	encode gzip
+
+	# CRITICAL: cross-origin isolation for SharedArrayBuffer.
+	header {
+		Cross-Origin-Opener-Policy   "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
+		Cross-Origin-Resource-Policy "same-origin"
+	}
+
+	# .well-known delegation — resolves @user:multiversum.cloud to the
+	# homeserver on matrix.multiversum.cloud and points clients at MAS.
+	handle /.well-known/matrix/server {
+		header Content-Type application/json
+		header Access-Control-Allow-Origin *
+		respond `{"m.server": "matrix.multiversum.cloud:443"}` 200
+	}
+	handle /.well-known/matrix/client {
+		header Content-Type application/json
+		header Access-Control-Allow-Origin *
+		respond `{
+  "m.homeserver": { "base_url": "https://matrix.multiversum.cloud" },
+  "org.matrix.msc2965.authentication": {
+    "issuer": "https://auth.multiversum.cloud/",
+    "account": "https://auth.multiversum.cloud/account"
+  }
+}` 200
+	}
+
+	reverse_proxy 127.0.0.1:8090
+}
+
+# ---------------------------------------------------------------------------
+# Synapse homeserver
+matrix.multiversum.cloud {
+	encode gzip
+	reverse_proxy 127.0.0.1:8008
+}
+
+# ---------------------------------------------------------------------------
+# MAS — Matrix Authentication Service (OIDC). Third Room's login redirect
+# lands here; MAS federates up to Authentik.
+auth.multiversum.cloud {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}
+
+# ---------------------------------------------------------------------------
+# Self-hosted registry (rig pushes, server pulls). Different domain (xcdr.org).
+# If this is a separate box, host this block there instead.
+registry.xcdr.org {
+	reverse_proxy 127.0.0.1:5000 {
+		header_up Host {host}
+	}
+	request_body {
+		max_size 2GB
+	}
+}

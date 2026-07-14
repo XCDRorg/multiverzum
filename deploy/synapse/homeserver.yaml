@@ -1,0 +1,51 @@
+# Synapse — homeserver.yaml (multiversum.cloud)
+# Template: replace ${...} with values from .env before first run.
+# MSC3861 is ENABLED from the start so MAS owns all auth. Greenfield deploy —
+# do NOT enable Synapse's own password login.
+
+server_name: "multiversum.cloud"          # the @you:multiversum.cloud suffix
+public_baseurl: "https://matrix.multiversum.cloud/"
+pid_file: /data/homeserver.pid
+web_client_location: "https://multiversum.cloud/"
+
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, federation]
+        compress: false
+
+database:
+  name: psycopg2
+  args:
+    user: "${POSTGRES_USER}"
+    password: "${POSTGRES_PASSWORD}"
+    database: "synapse"
+    host: "postgres"
+    cp_min: 5
+    cp_max: 10
+
+log_config: "/data/log.config"
+media_store_path: /data/media_store
+report_stats: false
+signing_key_path: "/data/signing.key"
+trusted_key_servers:
+  - server_name: "matrix.org"
+
+# --- MSC3861: delegate ALL auth to MAS. Secrets must match mas/config.yaml ---
+experimental_features:
+  msc3861:
+    enabled: true
+    issuer: "https://auth.multiversum.cloud/"
+    client_id: "0000000000000000000SYNAPSE"
+    client_auth_method: client_secret_basic
+    client_secret: "${MAS_CLIENT_SECRET}"
+    admin_token: "${MAS_ADMIN_TOKEN}"
+    account_management_url: "https://auth.multiversum.cloud/account"
+
+enable_registration: false
+password_config:
+  enabled: false

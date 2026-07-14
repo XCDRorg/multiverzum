@@ -1,0 +1,78 @@
+# multiversum.cloud — Third Room full stack (Podman / podman-compose)
+# Built/run on the 24/7 server. The rig is NOT involved here except to push
+# the frontend image to the registry, which this stack pulls.
+#
+# Bring-up order matters; see deploy/RUNBOOK.md. Do NOT `up` everything blind.
+
+version: "3"
+
+services:
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: docker.io/library/postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # We create two DBs (synapse, mas) via init script below.
+    volumes:
+      - pgdata:/var/lib/postgresql/data:Z
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/init.sh:Z,ro
+    # Synapse requires this collation config or it refuses to start:
+    command: ["postgres", "-c", "max_connections=200"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  synapse:
+    image: docker.io/matrixdotorg/synapse:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_DIR: /data
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    volumes:
+      - ./synapse:/data:Z
+    ports:
+      - "127.0.0.1:8008:8008"     # client/federation API, fronted by Caddy
+
+  # ---------------------------------------------------------------------------
+  mas:
+    image: ghcr.io/matrix-org/matrix-authentication-service:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["server", "--config", "/config/config.yaml"]
+    volumes:
+      - ./mas:/config:Z
+    ports:
+      - "127.0.0.1:8080:8080"     # OIDC endpoints, fronted by Caddy
+
+  # ---------------------------------------------------------------------------
+  coturn:
+    image: docker.io/coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host          # TURN needs the host network for UDP relay
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:Z,ro
+
+  # ---------------------------------------------------------------------------
+  frontend:
+    # This is the ONLY image built on the rig and pushed to your registry.
+    image: ${REGISTRY_HOST}/tr-app:latest
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "127.0.0.1:8090:3000"     # static Third Room client, fronted by Caddy
+
+  # ---------------------------------------------------------------------------
+
+volumes:
+  pgdata:
+  regdata:

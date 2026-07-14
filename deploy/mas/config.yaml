@@ -1,0 +1,81 @@
+# Matrix Authentication Service — config.yaml (multiversum.cloud)
+# Template: replace ${...} with values from .env before first run.
+#
+# Two wirings here:
+#   1. clients[] + matrix{}  -> the Synapse delegation (MSC3861), secrets match
+#      synapse/homeserver.yaml.
+#   2. upstream_oauth2[]     -> YOUR Authentik as the real identity provider.
+#      MAS does not store users; it federates login up to Authentik.
+
+http:
+  public_base: "https://auth.multiversum.cloud/"
+  issuer: "https://auth.multiversum.cloud/"
+  listeners:
+    - name: web
+      resources:
+        - name: discovery
+        - name: human
+        - name: oauth
+        - name: compat
+        - name: graphql
+        - name: assets
+      binds:
+        - address: "[::]:8080"
+
+database:
+  uri: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/mas"
+
+secrets:
+  encryption: "${MAS_ENCRYPTION_SECRET}"     # 64 hex chars (openssl rand -hex 32)
+  keys:
+    # Generate with: openssl genpkey -algorithm RSA -out rsa.key && cat rsa.key
+    - kid: "rsa-key-1"
+      key_file: "/config/rsa.key"
+
+# --- Synapse delegation client (MSC3861) -----------------------------------
+clients:
+  - client_id: "0000000000000000000SYNAPSE"
+    client_auth_method: client_secret_basic
+    client_secret: "${MAS_CLIENT_SECRET}"
+  - client_id: "01THIRDROOMWEBCLIENT0000000"
+    client_auth_method: none
+    redirect_uris:
+      - "https://multiversum.cloud/"
+
+matrix:
+  homeserver: "multiversum.cloud"            # = Synapse server_name
+  secret: "${MAS_MATRIX_SECRET}"             # MAS->Synapse admin API
+  endpoint: "http://synapse:8008/"           # internal container address
+
+# --- Upstream IdP: your Authentik on OPNsense ------------------------------
+# In Authentik create an OAuth2/OpenID provider+application for MAS:
+#   redirect_uri: https://auth.multiversum.cloud/upstream/callback/authentik
+#   signing key:  RSA  (ECC does NOT work)
+#   encryption:   none (not supported)
+#   scopes:       openid profile email
+upstream_oauth2:
+  providers:
+    - id: "01HXXXXXXXXXXXXXXXXXXXXXXX"        # any valid ULID; keep stable
+      human_name: "Authentik"
+      issuer: "${AUTHENTIK_ISSUER}"
+      client_id: "${AUTHENTIK_CLIENT_ID}"
+      client_secret: "${AUTHENTIK_CLIENT_SECRET}"
+      token_endpoint_auth_method: client_secret_basic
+      scope: "openid profile email"
+      discovery_mode: "insecure"             # set "oidc" once verified working
+      claims_imports:
+        localpart:
+          action: require
+          template: "{{ user.preferred_username }}"
+        displayname:
+          action: suggest
+          template: "{{ user.name }}"
+        email:
+          action: suggest
+          template: "{{ user.email }}"
+
+# Disable MAS local password registration — Authentik is the only way in.
+# Group-restriction (matrix-users group) is enforced on the Authentik side.
+account:
+  password_registration_enabled: false
+  password_login_enabled: false
