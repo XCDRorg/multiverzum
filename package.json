@@ -208,6 +208,26 @@
     "**/request/form-data": "2.5.6",
     "@babel/traverse": "7.23.2",
     "@babel/plugin-transform-modules-systemjs": "7.29.4",
-    "rollup": "3.30.0"
+    "rollup": "3.30.0",
+    "**/@istanbuljs/load-nyc-config/js-yaml": "3.15.0",
+    "**/@eslint/eslintrc/js-yaml": "4.3.0",
+    "**/cosmiconfig/js-yaml": "4.3.0",
+    "**/eslint/js-yaml": "4.3.0",
+    "**/@eslint/eslintrc/minimatch/brace-expansion": "1.1.16",
+    "**/@humanwhocodes/config-array/minimatch/brace-expansion": "1.1.16",
+    "**/eslint-plugin-import/minimatch/brace-expansion": "1.1.16",
+    "**/eslint-plugin-jsx-a11y/minimatch/brace-expansion": "1.1.16",
+    "**/eslint-plugin-react/minimatch/brace-expansion": "1.1.16",
+    "**/eslint/minimatch/brace-expansion": "1.1.16",
+    "**/jake/minimatch/brace-expansion": "1.1.16",
+    "**/node-dir/minimatch/brace-expansion": "1.1.16",
+    "**/test-exclude/minimatch/brace-expansion": "1.1.16",
+    "**/@joshwooding/vite-plugin-react-docgen-typescript/glob/minimatch/brace-expansion": "1.1.16",
+    "**/rimraf/glob/minimatch/brace-expansion": "1.1.16",
+    "**/shelljs/glob/minimatch/brace-expansion": "1.1.16",
+    "**/test-exclude/glob/minimatch/brace-expansion": "1.1.16",
+    "**/filelist/minimatch/brace-expansion": "2.1.2",
+    "**/@storybook/builder-vite/glob/minimatch/brace-expansion": "2.1.2",
+    "**/@storybook/core-common/glob/minimatch/brace-expansion": "2.1.2"
   }
 }
