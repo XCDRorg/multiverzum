@@ -214,6 +214,53 @@ function updateAudioAnalyser(ctx: MainContext, audioModule: MainAudioModule) {
 
 const MAX_AUDIO_BYTES = 640_000;
 
+/**
+ * worldgen: live internet-radio streams.
+ * A KHR_audio `uri` ending in `#wg-live` is an endless Icecast/SHOUTcast stream. fetch().arrayBuffer()
+ * would never resolve (and buffer forever), so such URIs are streamed through a media element instead.
+ * Stream from the same origin (a reverse-proxy path) or from a server that sends CORS headers:
+ * with Cross-Origin-Embedder-Policy: require-corp, a cross-origin stream without CORS stays silent.
+ */
+const LIVE_STREAM_MARK = "#wg-live";
+const liveStreamElements = new Set<HTMLMediaElement>();
+
+function isLiveStreamURI(uri: string): boolean {
+  return uri.endsWith(LIVE_STREAM_MARK);
+}
+
+function createLiveStreamElement(href: string): HTMLAudioElement {
+  const audioEl = new Audio();
+  audioEl.crossOrigin = "anonymous";
+  audioEl.preload = "none"; // the element that plays is a clone (see updateAudioSources)
+  audioEl.src = href.slice(0, href.length - LIVE_STREAM_MARK.length);
+  return audioEl;
+}
+
+function playMediaElement(mediaEl: HTMLMediaElement) {
+  const result = mediaEl.play();
+
+  if (result) {
+    // autoplay policy: retry on the next user gesture instead of staying silent
+    result.catch(() => {
+      const retry = () => mediaEl.play().catch(() => {});
+      document.addEventListener("pointerdown", retry, { once: true });
+      document.addEventListener("keydown", retry, { once: true });
+    });
+  }
+}
+
+function stopUnusedLiveStreams(inUse: Set<HTMLMediaElement>) {
+  for (const el of liveStreamElements) {
+    if (!inUse.has(el)) {
+      // leaving the world: stop downloading the stream
+      el.pause();
+      el.removeAttribute("src");
+      el.load();
+      liveStreamElements.delete(el);
+    }
+  }
+}
+
 const audioExtensionToMimeType: { [key: string]: string } = {
   mp3: "audio/mpeg",
   aac: "audio/mpeg",
@@ -251,6 +298,10 @@ async function loadAudioData(
 
     if (url.protocol === "mediastream:") {
       return audioModule.mediaStreams.get(url.pathname);
+    }
+
+    if (isLiveStreamURI(audioData.uri)) {
+      return createLiveStreamElement(url.href);
     }
 
     const response = await fetch(url.href, { signal });
@@ -341,6 +392,7 @@ function updateAudioDatas(ctx: MainContext, audioModule: MainAudioModule) {
 
 function updateAudioSources(ctx: MainContext, audioModule: MainAudioModule) {
   const localAudioSources = getLocalResources(ctx, MainAudioSource);
+  const liveInUse = new Set<HTMLMediaElement>();
 
   for (let i = 0; i < localAudioSources.length; i++) {
     const localAudioSource = localAudioSources[i];
@@ -393,8 +445,16 @@ function updateAudioSources(ctx: MainContext, audioModule: MainAudioModule) {
       // Create a new MediaElementSourceNode
       if (!localAudioSource.sourceNode) {
         const el = audioData.cloneNode() as HTMLMediaElement;
+        if (isLiveStreamURI(localAudioSource.audio.uri || "")) {
+          el.preload = "auto";
+          liveStreamElements.add(el);
+        }
         localAudioSource.sourceNode = audioModule.context.createMediaElementSource(el);
         localAudioSource.sourceNode.connect(gainNode);
+      }
+
+      if (liveStreamElements.has((localAudioSource.sourceNode as MediaElementAudioSourceNode).mediaElement)) {
+        liveInUse.add((localAudioSource.sourceNode as MediaElementAudioSourceNode).mediaElement);
       }
 
       const mediaSourceNode = localAudioSource.sourceNode as MediaElementAudioSourceNode;
@@ -413,6 +473,8 @@ function updateAudioSources(ctx: MainContext, audioModule: MainAudioModule) {
       }
     }
   }
+
+  stopUnusedLiveStreams(liveInUse);
 }
 
 function processAudioPlaybackRingBuffer(ctx: MainContext, audioModule: MainAudioModule) {
@@ -496,8 +558,8 @@ function playAudio(
   } else {
     const sourceNode = audioSource.sourceNode as MediaElementAudioSourceNode;
     const mediaEl = sourceNode.mediaElement;
-    audioData.currentTime = time;
-    mediaEl.play();
+    if (!liveStreamElements.has(mediaEl)) audioData.currentTime = time; // a live stream can't seek
+    playMediaElement(mediaEl);
   }
 
   audioSource.canAutoPlay = false;
